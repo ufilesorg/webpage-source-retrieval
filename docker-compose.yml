@@ -1,0 +1,25 @@
+services:
+  webpage:
+    build: app
+    restart: unless-stopped
+    command: python app.py
+    expose:
+      - 8000
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app
+    networks:
+      - mongo-net
+      - ufiles-stg-net
+      - ufiles-net
+
+networks:
+  traefik-net:
+    external: true
+  mongo-net:
+    external: true
+  ufiles-stg-net:
+    external: true
+  ufiles-net:
+    external: true
