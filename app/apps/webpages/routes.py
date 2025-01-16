@@ -1,15 +1,19 @@
+import logging
 import uuid
 
 from fastapi import BackgroundTasks, Request
 from fastapi_mongo_base.routes import AbstractTaskRouter
+from usso.fastapi.integration import jwt_access_security
 
 from .models import Webpage
-from .schemas import WebpageCreateSchema, WebpageDetailSchema, WebpageLightSchema
+from .schemas import WebpageCreateSchema, WebpageDetailSchema, WebpageSchema
 
 
-class WebpageRouter(AbstractTaskRouter[Webpage, WebpageLightSchema]):
+class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
     def __init__(self):
-        super().__init__(model=Webpage, schema=WebpageLightSchema, user_dependency=None)
+        super().__init__(
+            model=Webpage, schema=WebpageSchema, user_dependency=jwt_access_security
+        )
 
     def config_schemas(self, schema, **kwargs):
         super().config_schemas(schema, **kwargs)
@@ -67,8 +71,8 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageLightSchema]):
     ):
         webpage: Webpage = await Webpage.get_by_url(data.url)
         if not webpage:
-            return await super().create_item(
-                request, data.model_dump(), background_tasks
+            webpage: Webpage = await super(AbstractTaskRouter, self).create_item(
+                request, data.model_dump()
             )
 
         if data.force_refetch:
@@ -90,5 +94,6 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageLightSchema]):
 
     async def get_images(self, request: Request, uid: uuid.UUID):
         raise NotImplementedError
+
 
 router = WebpageRouter().router

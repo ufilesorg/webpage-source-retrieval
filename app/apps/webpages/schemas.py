@@ -1,9 +1,8 @@
+import uuid
 from typing import Literal
 
-from fastapi_mongo_base.core.enums import Language
 from fastapi_mongo_base.schemas import BaseEntitySchema
-from fastapi_mongo_base.utils import texttools
-from fastapi_mongo_base.tasks import TaskMixin, TaskStatusEnum
+from fastapi_mongo_base.tasks import TaskMixin
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -12,13 +11,15 @@ class WebpageCreateSchema(BaseModel):
     force_refetch: bool = False
 
 
-class WebpageLightSchema(BaseEntitySchema, TaskMixin):
-    user_id: str | None = None
+class WebpageSchema(BaseEntitySchema, TaskMixin):
+    user_id: uuid.UUID | None = None
 
     url: str = Field(json_schema_extra={"index": True, "unique": True})
     crawl_method: Literal["direct", "browser"] = "direct"
-    screenshot: str | None = None
-    google_data: dict | None = None
+    page_source: str | None = None
+
+    # screenshot: str | None = None
+    # google_data: dict | None = None
 
     @field_validator("url")
     def validate_url(cls, value: str):
@@ -29,14 +30,11 @@ class WebpageLightSchema(BaseEntitySchema, TaskMixin):
     @property
     def main_domain(self):
         from .services import get_main_domain
+
         return get_main_domain(self.url)
 
     def __repr__(self):
         return f"<{self.__class__.__name__} {self.url}, {self.crawl_method}, {bool(self.brand)}>"
-
-
-class WebpageSchema(WebpageLightSchema):
-    page_source: str | None = None
 
     def check_cache(self):
         return self.page_source and not self.expired()

@@ -1,6 +1,7 @@
 """FastAPI server configuration."""
-import os
+
 import dataclasses
+import os
 from pathlib import Path
 
 import dotenv
@@ -20,4 +21,3 @@ class Settings(BaseSettings):
 
     GSEARCH_API_KEY: str = os.getenv("GSEARCH_API_KEY")
     GSEARCH_CX: str = os.getenv("GSEARCH_CX")
-    

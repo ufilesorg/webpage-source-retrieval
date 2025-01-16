@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -8,8 +7,8 @@ from io import BytesIO
 from pathlib import Path
 
 import httpx
-from fastapi_mongo_base.utils import basic, texttools
 from fastapi_mongo_base.tasks import TaskStatusEnum
+from fastapi_mongo_base.utils import basic
 from googleapiclient.discovery import build
 from PIL import ImageFile
 from selenium import webdriver
@@ -44,7 +43,7 @@ def get_main_domain(url: str) -> str:
 async def fetch_webpage_direct(webpage: Webpage, **kwargs) -> dict | None:
     follow_redirects = kwargs.pop("follow_redirects", True)
 
-    async with httpx.AsyncClient(follow_redirects=follow_redirects, **kwargs) as client:
+    async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
         response = await client.get(webpage.url)
         response.raise_for_status()
         return {"source_code": response.text}  # Return page content if successful
@@ -239,9 +238,9 @@ async def get_google_result(url, **kwargs):
 
 
 @basic.try_except_wrapper
+@basic.retry_execution(attempts=3, delay=1)
 async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
     # Check cache first
-
     if webpage.check_cache() and not kwargs.get("force_refetch"):
         return webpage
 

@@ -1,10 +1,7 @@
-import logging
 import re
 from urllib.parse import urlparse
 
-from beanie import Insert, Save, SaveChanges, before_event
 from fastapi_mongo_base.models import BaseEntity
-from fastapi_mongo_base.utils import basic
 from pymongo import ASCENDING, IndexModel
 
 from .schemas import WebpageSchema
