@@ -1,4 +1,3 @@
-import logging
 import uuid
 
 from fastapi import BackgroundTasks, Request
