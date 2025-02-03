@@ -34,7 +34,7 @@ class WebpageSchema(BaseEntitySchema, TaskMixin):
         return get_main_domain(self.url)
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} {self.url}, {self.crawl_method}, {bool(self.brand)}>"
+        return f"<{self.__class__.__name__} {self.url}, {self.crawl_method}>"
 
     def check_cache(self):
         return self.page_source and not self.expired()
@@ -78,6 +78,16 @@ class WebpageSchema(BaseEntitySchema, TaskMixin):
 
     def is_enough_text(self):
         return self.text and len(self.text) > 150
+
+
+class WebpageListSchema(BaseEntitySchema, TaskMixin):
+    user_id: uuid.UUID | None = None
+
+    url: str = Field(json_schema_extra={"index": True, "unique": True})
+    crawl_method: Literal["direct", "browser"] = "direct"
+    title: str | None = None
+    main_domain: str | None = None
+    meta_text: str | None = None
 
 
 class WebpageDetailSchema(WebpageSchema):

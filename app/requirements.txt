@@ -24,6 +24,9 @@ usso[fastapi]
 ufaas
 ufiles
 
+validators
+langdetect
+
 selenium
 beautifulsoup4
 google-api-python-client

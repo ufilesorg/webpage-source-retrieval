@@ -5,7 +5,13 @@ from fastapi_mongo_base.routes import AbstractTaskRouter
 from usso.fastapi.integration import jwt_access_security
 
 from .models import Webpage
-from .schemas import WebpageCreateSchema, WebpageDetailSchema, WebpageSchema
+from .schemas import (
+    WebpageCreateSchema,
+    WebpageDetailSchema,
+    WebpageListSchema,
+    WebpageSchema,
+)
+from .services import images_from_webpage
 
 
 class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
@@ -15,7 +21,7 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
         )
 
     def config_schemas(self, schema, **kwargs):
-        super().config_schemas(schema, **kwargs)
+        super().config_schemas(schema, list_item_schema=WebpageListSchema, **kwargs)
         self.retrieve_response_schema = WebpageDetailSchema  # WebpageSchema
 
     def config_routes(self, **kwargs):
@@ -49,7 +55,7 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
             "/{uid:uuid}/images",
             self.get_images,
             methods=["GET"],
-            include_in_schema=False,
+            # include_in_schema=False,
         )
         # self.router.add_api_route(
         #     "/{uid:uuid}/{action:str}",
@@ -91,8 +97,26 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
         item: Webpage = await self.get_item(uid)
         return {"text": item.text}
 
-    async def get_images(self, request: Request, uid: uuid.UUID):
-        raise NotImplementedError
+    async def get_images(
+        self,
+        request: Request,
+        uid: uuid.UUID,
+        invalid_languages: str | None = None,
+        min_acceptable_side: int = 600,
+        max_acceptable_side: int = 2500,
+        with_svg: bool = False,
+    ):
+        item: Webpage = await self.get_item(uid)
+        invalid_languages = invalid_languages.split(",") if invalid_languages else []
+        return {
+            "images": await images_from_webpage(
+                item,
+                invalid_languages=invalid_languages,
+                min_acceptable_side=min_acceptable_side,
+                max_acceptable_side=max_acceptable_side,
+                with_svg=with_svg,
+            )
+        }
 
 
 router = WebpageRouter().router

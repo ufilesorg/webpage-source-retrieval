@@ -1,16 +1,22 @@
 import asyncio
 import base64
+import binascii
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
+import langdetect
+import validators
+from bs4 import BeautifulSoup
 from fastapi_mongo_base.tasks import TaskStatusEnum
-from fastapi_mongo_base.utils import basic
+from fastapi_mongo_base.utils import basic, imagetools
 from googleapiclient.discovery import build
-from PIL import ImageFile
+from PIL import Image, ImageFile
 from selenium import webdriver
 from selenium.common.exceptions import (
     NoSuchWindowException,
@@ -24,6 +30,10 @@ from server.config import Settings
 from .models import Webpage
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+image_url_pattern = re.compile(
+    r"(?:https?:\/\/)?[^\s\"']+\.(?:jpg|jpeg|png|gif|webp|bmp|tiff|ico)(?:\?[^\s\"']*)?",
+    re.IGNORECASE,
+)
 
 
 def get_main_domain(url: str) -> str:
@@ -258,3 +268,114 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
     webpage.page_source = content.get("source_code") if content else None
     await webpage.save()
     return webpage
+
+
+@basic.try_except_wrapper
+async def language_validation(
+    soup: BeautifulSoup, invalid_languages: list[str] = ["fa"]
+) -> bool:
+    detected_language = langdetect.detect(soup.get_text(strip=True))
+    return detected_language not in invalid_languages
+
+
+async def get_image_verification(
+    image_url: str, min_acceptable_side=600, max_acceptable_side=2500
+) -> dict:
+    try:
+        img_response = await imagetools.get_image_metadata(image_url, timeout=30)
+        width, height = img_response.get("width"), img_response.get("height")
+        longer_side, shorter_side = max(width, height), min(width, height)
+        if (
+            shorter_side >= min_acceptable_side
+            and longer_side <= max_acceptable_side
+            and shorter_side / longer_side >= 0.75
+        ):
+            return True
+
+    except (binascii.Error, Image.UnidentifiedImageError, ValueError) as e:
+        logging.error(f"Error downloading image {image_url}: {e}")
+    except httpx.HTTPError as e:
+        if hasattr(e, "response") and (
+            e.response.status_code == 404 or e.response.status_code == 403
+        ):
+            return False
+        logging.error(f"Error downloading image {image_url}: {type(e)} {e}")
+    return False
+
+
+def is_valid_image_url(img_url: str, base_url: str, check_svg: bool = True) -> bool:
+    full_url = urljoin(base_url, img_url)
+    return (
+        full_url
+        and full_url != base_url
+        and (full_url.startswith("data:image/") or validators.url(full_url))
+        and not (
+            check_svg
+            and (full_url.endswith(".svg") or "data:image/svg+xml" in full_url)
+        )
+    )
+
+
+def extract_image_urls(
+    soup: BeautifulSoup, base_url: str, html_source: str
+) -> set[str]:
+    urls = set()
+    for img in soup.find_all("img"):
+        src = img.get("src")
+        if src:
+            urls.add(urljoin(base_url, src))
+        srcset = img.get("srcset")
+        if srcset:
+            # Adjust splitting as needed: some srcset values are comma separated.
+            for part in re.split(r",\s*", srcset):
+                url_part = part.split()[0]
+                urls.add(urljoin(base_url, url_part))
+    urls.update(
+        urljoin(base_url, img_url) for img_url in image_url_pattern.findall(html_source)
+    )
+    return urls
+
+
+async def images_from_webpage(
+    webpage: Webpage,
+    *,
+    invalid_languages: list[str] = ["fa"],
+    min_acceptable_side=600,
+    max_acceptable_side=2500,
+    with_svg: bool = False,
+):
+    url = webpage.url
+    html_source = webpage.page_source
+    soup = webpage.soup
+
+    if not await language_validation(soup, invalid_languages=invalid_languages):
+        logging.warning(f"Skipping {url} as its language is Persian.")
+        return []
+
+    # Extract and filter candidate image URLs.
+    all_urls = extract_image_urls(soup, url, html_source)
+    candidate_image_urls = {
+        img_url
+        for img_url in all_urls
+        if is_valid_image_url(img_url, url, not with_svg)
+    }
+
+    # Optionally limit concurrency if needed.
+    sem = asyncio.Semaphore(10)  # adjust the limit as necessary
+
+    async def limited_verification(image_url: str) -> bool:
+        async with sem:
+            return await get_image_verification(
+                image_url, min_acceptable_side, max_acceptable_side
+            )
+
+    verification_tasks = [
+        limited_verification(image_url) for image_url in candidate_image_urls
+    ]
+    verifications = await asyncio.gather(*verification_tasks)
+    valid_image_urls = [
+        image_url
+        for image_url, verified in zip(candidate_image_urls, verifications)
+        if verified
+    ]
+    return valid_image_urls
