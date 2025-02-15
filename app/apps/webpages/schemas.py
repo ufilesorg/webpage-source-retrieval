@@ -77,7 +77,7 @@ class WebpageSchema(BaseEntitySchema, TaskMixin):
             return title.get_text().strip()
 
     def is_enough_text(self):
-        return self.text and len(self.text) > 150
+        return self.text and len(self.text) > 500
 
 
 class WebpageListSchema(BaseEntitySchema, TaskMixin):

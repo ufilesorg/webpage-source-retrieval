@@ -328,7 +328,7 @@ def extract_image_urls(
         if srcset:
             # Adjust splitting as needed: some srcset values are comma separated.
             for part in re.split(r",\s*", srcset):
-                url_part = part.split()[0]
+                url_part = (part.split() or [part])[0]
                 urls.add(urljoin(base_url, url_part))
     urls.update(
         urljoin(base_url, img_url) for img_url in image_url_pattern.findall(html_source)
