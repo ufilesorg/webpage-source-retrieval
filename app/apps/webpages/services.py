@@ -35,6 +35,8 @@ image_url_pattern = re.compile(
     re.IGNORECASE,
 )
 
+semaphore = asyncio.Semaphore(4)
+
 
 def get_main_domain(url: str) -> str:
     from urllib.parse import urlparse
@@ -51,12 +53,23 @@ def get_main_domain(url: str) -> str:
 
 @basic.try_except_wrapper
 async def fetch_webpage_direct(webpage: Webpage, **kwargs) -> dict | None:
-    follow_redirects = kwargs.pop("follow_redirects", True)
+    if "https://www.reddit.com" in webpage.url:
+        return None
+    try:
+        follow_redirects = kwargs.pop("follow_redirects", True)
 
-    async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
-        response = await client.get(webpage.url)
-        response.raise_for_status()
-        return {"source_code": response.text}  # Return page content if successful
+        async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
+            response = await client.get(webpage.url)
+            response.raise_for_status()
+            return {"source_code": response.text}  # Return page content if successful
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 403:
+            return None
+        logging.error(f"Error fetching `{webpage.url}` with direct: {type(e)} {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Error fetching `{webpage.url}` with direct: {type(e)} {e}")
+        return None
 
 
 async def fetch_webpage_dynamic(webpage: Webpage):
@@ -207,7 +220,7 @@ async def fetch_webpage_dynamic(webpage: Webpage):
             emit=False,
             log_type="crawl_error",
         )
-        logging.error(f"Error fetching `{webpage.url}` with browser: {e}")
+        logging.error(f"Error fetching `{webpage.url}` with browser: {type(e)} {e}")
         return {}
 
 
@@ -250,24 +263,30 @@ async def get_google_result(url, **kwargs):
 @basic.try_except_wrapper
 @basic.retry_execution(attempts=3, delay=1)
 async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
-    # Check cache first
-    if webpage.check_cache() and not kwargs.get("force_refetch"):
-        return webpage
+    async with semaphore:
+        # Check cache first
+        if webpage.check_cache() and not kwargs.get("force_refetch"):
+            webpage.task_status = TaskStatusEnum.completed
+            await webpage.save()
+            return webpage
 
-    # browser_task = asyncio.create_task(fetch_webpage_dynamic(webpage))
-    # fetch_tasks = [browser_task]
+        # browser_task = asyncio.create_task(fetch_webpage_dynamic(webpage))
+        # fetch_tasks = [browser_task]
 
-    # Try network fetch
-    content = await fetch_webpage_direct(webpage, **kwargs)
-    webpage.page_source = content.get("source_code") if content else None
-    if webpage.is_enough_text():
+        # Try network fetch
+        content = await fetch_webpage_direct(webpage, **kwargs)
+        webpage.page_source = content.get("source_code") if content else None
+        if webpage.is_enough_text():
+            webpage.task_status = TaskStatusEnum.completed
+            await webpage.save()
+            return webpage
+
+        content: dict = await fetch_webpage_dynamic(webpage)
+        webpage.page_source = content.get("source_code") if content else None
+        webpage.task_status = TaskStatusEnum.completed
+
         await webpage.save()
         return webpage
-
-    content: dict = await fetch_webpage_dynamic(webpage)
-    webpage.page_source = content.get("source_code") if content else None
-    await webpage.save()
-    return webpage
 
 
 @basic.try_except_wrapper

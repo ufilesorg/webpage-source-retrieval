@@ -5,6 +5,11 @@ services:
     command: python app.py
     expose:
       - 8000
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 2G
     env_file:
       - .env
     volumes:
