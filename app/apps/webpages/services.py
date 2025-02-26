@@ -261,11 +261,14 @@ async def get_google_result(url, **kwargs):
 
 
 @basic.try_except_wrapper
-@basic.retry_execution(attempts=3, delay=1)
+# @basic.retry_execution(attempts=3, delay=1)
 async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
+    webpage.id = (await Webpage.get_by_url(webpage.url)).id
+
     async with semaphore:
         # Check cache first
         if webpage.check_cache() and not kwargs.get("force_refetch"):
+            logging.info(f"Fetching webpage {webpage.url} from cache")
             webpage.task_status = TaskStatusEnum.completed
             await webpage.save()
             return webpage
@@ -278,12 +281,14 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
         webpage.page_source = content.get("source_code") if content else None
         if webpage.is_enough_text():
             webpage.task_status = TaskStatusEnum.completed
+            logging.info(f"Fetching webpage {webpage.url} from network")
             await webpage.save()
             return webpage
 
         content: dict = await fetch_webpage_dynamic(webpage)
         webpage.page_source = content.get("source_code") if content else None
         webpage.task_status = TaskStatusEnum.completed
+        logging.info(f"Fetching webpage {webpage.url} from browser")
 
         await webpage.save()
         return webpage

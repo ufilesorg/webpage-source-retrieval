@@ -6,7 +6,7 @@ services:
     expose:
       - 8000
     deploy:
-      replicas: 3
+      replicas: 1
       resources:
         limits:
           memory: 2G
@@ -18,6 +18,25 @@ services:
       - mongo-net
       - ufiles-stg-net
       - ufiles-net
+
+  worker:
+    build: app
+    restart: unless-stopped
+    command: python runner.py
+    env_file:
+      - .env
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 4G
+          cpus: 1
+    volumes:
+      - ./app:/app
+    networks:
+      - mongo-net
+    depends_on:
+      - webpage
 
 networks:
   traefik-net:

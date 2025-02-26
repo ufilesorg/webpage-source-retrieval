@@ -84,12 +84,13 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
             webpage.page_source = None
             webpage.task_status = "init"
 
-        if sync:
+        if sync and False:
             await webpage.start_processing(force_refetch=data.force_refetch)
         else:
-            background_tasks.add_task(
-                webpage.start_processing, force_refetch=data.force_refetch
-            )
+            # background_tasks.add_task(
+            #     webpage.start_processing, force_refetch=data.force_refetch
+            # )
+            await webpage.push_to_queue()
 
         return webpage
 

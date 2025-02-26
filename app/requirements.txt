@@ -25,6 +25,7 @@ ufaas
 ufiles
 
 validators
+redis
 langdetect
 
 selenium

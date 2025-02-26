@@ -49,3 +49,14 @@ class Webpage(WebpageSchema, BaseEntity):
         from . import services
 
         await services.fetch_webpage(self, **kwargs)
+
+    async def push_to_queue(self):
+        """Add the task to Redis queue"""
+        import json
+
+        from server import db
+
+        queue_name = f"{self.__class__.__name__.lower()}_queue"
+        await db.redis.lpush(
+            queue_name, json.dumps(self.model_dump(include={"uid"}, mode="json"))
+        )
