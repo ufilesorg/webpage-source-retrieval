@@ -270,8 +270,11 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
 
         # Try network fetch
         content = await fetch_webpage_direct(webpage, **kwargs)
-        if content.get("error"):
-            return content
+        if content.get("error") == "not_html":
+            webpage.page_source = "<html><body><h1>Not HTML</h1></body></html>"
+            await webpage.save()
+            return webpage
+
         webpage.page_source = content.get("source_code") if content else None
         if webpage.is_enough_text():
             webpage.task_status = TaskStatusEnum.completed
