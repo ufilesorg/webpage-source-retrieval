@@ -297,6 +297,8 @@ async def language_validation(
     soup: BeautifulSoup, invalid_languages: list[str] = ["fa"]
 ) -> bool:
     # Extract all text from the soup
+    if not soup:
+        return True
     full_text = soup.get_text(strip=True)
 
     # If there's not enough text to analyze, consider it valid
