@@ -17,6 +17,7 @@ class Settings(config.Settings):
 
     selenium_remote_url: str = os.getenv("SELENIUM_REMOTE_URL", "http://localhost:4444")
     selenium_loading_time: int = 5
+    httpx_timeout: int = 10
     browser_timeout: int = 20
 
     GSEARCH_API_KEY: str = os.getenv("GSEARCH_API_KEY")

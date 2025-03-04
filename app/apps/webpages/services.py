@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import binascii
 import logging
 import re
@@ -36,6 +35,7 @@ image_url_pattern = re.compile(
 )
 
 semaphore = asyncio.Semaphore(4)
+image_limit_semaphore = asyncio.Semaphore(4)  # adjust the limit as necessary
 
 
 def get_main_domain(url: str) -> str:
@@ -59,7 +59,7 @@ async def fetch_webpage_direct(webpage: Webpage, **kwargs) -> dict | None:
         follow_redirects = kwargs.pop("follow_redirects", True)
 
         async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
-            response = await client.get(webpage.url)
+            response = await client.get(webpage.url, timeout=Settings.httpx_timeout)
             response.raise_for_status()
             return {"source_code": response.text}  # Return page content if successful
     except httpx.HTTPStatusError as e:
@@ -72,7 +72,7 @@ async def fetch_webpage_direct(webpage: Webpage, **kwargs) -> dict | None:
         return None
 
 
-async def fetch_webpage_dynamic(webpage: Webpage):
+async def fetch_webpage_dynamic(webpage: Webpage, **kwargs):
 
     def browser_img_arr(
         driver: webdriver.Remote, js_filename: str = "logo_img.js"
@@ -89,26 +89,11 @@ async def fetch_webpage_dynamic(webpage: Webpage):
 
         # Execute the JavaScript asynchronously
         try:
-            logo_base64_list = driver.execute_async_script(js_code)
+            image_base64_list = driver.execute_async_script(js_code)
+            return image_base64_list
         except Exception as e:
-            logging.error(f"Error fetching favicon images: {e}")
+            logging.error(f"Error fetching images: {e}")
             return []
-
-        # Convert each base64-encoded favicon into a BytesIO image
-        logo_images = []
-        for logo_base64 in logo_base64_list:
-            try:
-                if not logo_base64:
-                    continue
-                # Remove the "data:image/png;base64," prefix if it exists
-                if logo_base64.startswith("data:image"):
-                    logo_base64 = logo_base64.split(",", 1)[1]
-                logo_image = BytesIO(base64.b64decode(logo_base64))
-                logo_images.append(logo_image)
-            except Exception as e:
-                logging.error(f"Error decoding logo image: {e}")
-
-        return logo_images
 
     def capture_full_page_screenshot(
         driver: webdriver.Remote, max_width=1920, max_height=10800
@@ -174,7 +159,7 @@ async def fetch_webpage_dynamic(webpage: Webpage):
         full_page_source = main_page_source + "\n".join(iframe_contents)
         return full_page_source
 
-    def browser_fetch(webpage: Webpage, **kwargs):
+    def browser_fetch(webpage: Webpage, kwargs: dict = {}):
         try:
             webdriver_options = webdriver.FirefoxOptions()
             webdriver_options.add_argument("--no-shm")
@@ -193,11 +178,16 @@ async def fetch_webpage_dynamic(webpage: Webpage):
                 driver.execute_script("window.stop();")
 
             source_code = get_source_with_iframes(driver)
+            if kwargs.get("extract_images", False):
+                images = browser_img_arr(driver, "image_extractor.js")
+            else:
+                images = []
             # favicon_images = browser_img_arr(driver, "favicon.js")
             # logo_images = browser_img_arr(driver, "logo_img.js")
             # screenshot_image = capture_full_page_screenshot(driver)
             return {
                 "source_code": source_code,
+                "images": images,
                 # "favicon_images": favicon_images,
                 # "logo_images": logo_images,
                 # "screenshot_image": screenshot_image,
@@ -285,8 +275,9 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
             await webpage.save()
             return webpage
 
-        content: dict = await fetch_webpage_dynamic(webpage)
+        content: dict = await fetch_webpage_dynamic(webpage, **kwargs)
         webpage.page_source = content.get("source_code") if content else None
+        webpage.images = content.get("images") if content else None
         webpage.task_status = TaskStatusEnum.completed
         logging.info(f"Fetching webpage {webpage.url} from browser")
 
@@ -298,8 +289,50 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
 async def language_validation(
     soup: BeautifulSoup, invalid_languages: list[str] = ["fa"]
 ) -> bool:
-    detected_language = langdetect.detect(soup.get_text(strip=True))
-    return detected_language not in invalid_languages
+    # Extract all text from the soup
+    full_text = soup.get_text(strip=True)
+
+    # If there's not enough text to analyze, consider it valid
+    if len(full_text) < 100:
+        return True
+
+    # Split text into chunks for better language detection
+    chunk_size = 500  # Characters per chunk
+    chunks = [
+        full_text[i : i + chunk_size] for i in range(0, len(full_text), chunk_size)
+    ]
+
+    # Detect language for each chunk
+    language_counts = {}
+    for chunk in chunks:
+        # Skip chunks that are too short for reliable detection
+        if len(chunk.strip()) < 50:
+            continue
+
+        try:
+            lang = langdetect.detect(chunk)
+            language_counts[lang] = language_counts.get(lang, 0) + 1
+        except langdetect.LangDetectException:
+            # Skip chunks where language detection fails
+            continue
+
+    # If no languages were detected, consider it valid
+    if not language_counts:
+        return True
+
+    # Calculate percentage of each language
+    total_chunks = sum(language_counts.values())
+    language_percentages = {
+        lang: (count / total_chunks) * 100 for lang, count in language_counts.items()
+    }
+
+    # Check if any invalid language exceeds threshold (e.g., 20%)
+    threshold = 20.0
+    for invalid_lang in invalid_languages:
+        if language_percentages.get(invalid_lang, 0) > threshold:
+            return False
+
+    return True
 
 
 async def get_image_verification(
@@ -321,7 +354,7 @@ async def get_image_verification(
             return True
 
     except (binascii.Error, Image.UnidentifiedImageError, ValueError) as e:
-        logging.error(f"Error downloading image {image_url}: {e}")
+        logging.error(f"Error downloading image {image_url}: {type(e)} {e}")
     except httpx.HTTPError as e:
         if hasattr(e, "response") and (
             e.response.status_code == 404 or e.response.status_code == 403
@@ -347,20 +380,23 @@ def is_valid_image_url(img_url: str, base_url: str, check_svg: bool = True) -> b
 def extract_image_urls(
     soup: BeautifulSoup, base_url: str, html_source: str
 ) -> set[str]:
+    def join_url(url: str) -> str:
+        if url.startswith("https:/") and not url.startswith("https://"):
+            url = url.replace("https:/", "https://", 1)
+        return urljoin(base_url, url)
+
     urls = set()
     for img in soup.find_all("img"):
         src = img.get("src")
         if src:
-            urls.add(urljoin(base_url, src))
+            urls.add(join_url(src))
         srcset = img.get("srcset")
         if srcset:
             # Adjust splitting as needed: some srcset values are comma separated.
             for part in re.split(r",\s*", srcset):
                 url_part = (part.split() or [part])[0]
-                urls.add(urljoin(base_url, url_part))
-    urls.update(
-        urljoin(base_url, img_url) for img_url in image_url_pattern.findall(html_source)
-    )
+                urls.add(join_url(url_part))
+    urls.update(join_url(img_url) for img_url in image_url_pattern.findall(html_source))
     return urls
 
 
@@ -372,6 +408,9 @@ async def images_from_webpage(
     max_acceptable_side=2500,
     with_svg: bool = False,
 ):
+    if webpage.images:
+        return webpage.images
+
     url = webpage.url
     html_source = webpage.page_source
     soup = webpage.soup
@@ -388,11 +427,8 @@ async def images_from_webpage(
         if is_valid_image_url(img_url, url, not with_svg)
     }
 
-    # Optionally limit concurrency if needed.
-    sem = asyncio.Semaphore(10)  # adjust the limit as necessary
-
     async def limited_verification(image_url: str) -> bool:
-        async with sem:
+        async with image_limit_semaphore:
             return await get_image_verification(
                 image_url, min_acceptable_side, max_acceptable_side
             )

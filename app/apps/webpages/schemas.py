@@ -1,3 +1,4 @@
+import datetime
 import uuid
 from typing import Literal
 
@@ -17,11 +18,30 @@ class WebpageSchema(BaseEntitySchema, TaskMixin):
 
     url: str = Field(json_schema_extra={"index": True, "unique": True})
     crawl_method: Literal["direct", "browser"] = "direct"
-    page_source: str | None = None
     images: list[str] | None = None
 
     # screenshot: str | None = None
     # google_data: dict | None = None
+
+    @property
+    def page_source(self):
+        from server.db import redis_sync as redis
+
+        value = redis.get(f"WEBPAGE:source:{self.url}")
+        if value:
+            return value.decode("utf-8")
+        return None
+
+    @page_source.setter
+    def page_source(self, value: str):
+        from server.db import redis_sync as redis
+
+        redis.set(f"WEBPAGE:source:{self.url}", str(value), ex=60 * 60 * 4)
+
+    def expired(self, hours: int = 4):
+        return (
+            datetime.datetime.now() - self.updated_at
+        ).total_seconds() / 3600 > hours
 
     @field_validator("url")
     def validate_url(cls, value: str):

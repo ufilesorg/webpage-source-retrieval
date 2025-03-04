@@ -34,6 +34,7 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
         data = json.loads(message.decode("utf-8"))
         uid = data.get("uid")
         entity = await entity_class.get_item(uid)
+        extract_images = data.get("meta_data", {}).get("extract_images", True)
         # async with httpx.AsyncClient(
         #     headers={"x-api-key": os.getenv("UFILES_API_KEY")}
         # ) as client:
@@ -46,17 +47,18 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
         #         await entity.start_processing()
         #         return True
 
-        await entity.start_processing()
+        logging.info(f"Starting processing for {entity.url}")
+        await entity.start_processing(**data)
 
-        if data.get("meta_data", {}).get("get_images", True):
-            logging.info(f"Getting images for {entity.uid}")
+        logging.info(f"source gotten for {entity.url}")
+
+        if extract_images:
             from apps.webpages import services
-            from fastapi_mongo_base.core import enums
 
             urls = await services.images_from_webpage(
                 entity,
                 invalid_languages=data.get("meta_data", {}).get(
-                    "invalid_languages", [enums.Language.Persian]
+                    "invalid_languages", []
                 ),
                 min_acceptable_side=data.get("meta_data", {}).get(
                     "min_acceptable_side", 600
@@ -68,8 +70,7 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
             )
             entity.images = urls
             await entity.save()
-        else:
-            logging.info(f"Skipping images for {entity.uid}")
+            logging.info(f"Extracted {len(urls)} images for {entity.url}")
     return False
 
 
