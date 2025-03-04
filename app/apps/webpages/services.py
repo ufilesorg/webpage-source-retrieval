@@ -306,7 +306,11 @@ async def get_image_verification(
     image_url: str, min_acceptable_side=600, max_acceptable_side=2500
 ) -> dict:
     try:
-        img_response = await imagetools.get_image_metadata(image_url, timeout=30)
+        img_response = await imagetools.get_image_metadata(
+            image_url, with_exif=False, follow_redirects=True
+        )
+        if not img_response:
+            return False
         width, height = img_response.get("width"), img_response.get("height")
         longer_side, shorter_side = max(width, height), min(width, height)
         if (

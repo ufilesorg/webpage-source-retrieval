@@ -23,29 +23,55 @@ async def initialize_app():
 
 
 async def process_queue_message(entity_class: Type[T], **kwargs):
-    import httpx
+    pass
 
     queue_name = kwargs.get("name", entity_class.__name__).lower() + "_queue"
     redis_client = await db.RedisSSHHandler().initialize()
     await asyncio.wait_for(redis_client.ping(), timeout=10)
-    logging.info(f"Connected to Redis")
+    # logging.info(f"Connected to Redis")
     result = await redis_client.brpop(queue_name, timeout=300)  # 5 minutes timeout
-    logging.info(f"Received message from {result} {queue_name}")
+    # logging.info(f"Received message from {result} {queue_name}")
     if result:
         _, message = result  # Unpack the queue_name and message
         data = json.loads(message.decode("utf-8"))
-        # entity = await entity_class.find_one(data)
-        async with httpx.AsyncClient(
-            headers={"x-api-key": os.getenv("UFILES_API_KEY")}
-        ) as client:
-            uid = data["uid"]
-            response = await client.get(
-                url=f"https://{config.Settings.root_url}{config.Settings.base_path}/webpages/{uid}",
+        uid = data.get("uid")
+        entity = await entity_class.get_item(uid)
+        # async with httpx.AsyncClient(
+        #     headers={"x-api-key": os.getenv("UFILES_API_KEY")}
+        # ) as client:
+        #     uid = data.get("uid")
+        #     response = await client.get(
+        #         url=f"https://{config.Settings.root_url}{config.Settings.base_path}/webpages/{uid}",
+        #     )
+        #     if response.status_code == 200:
+        #         entity = entity_class(**response.json())
+        #         await entity.start_processing()
+        #         return True
+
+        await entity.start_processing()
+
+        if data.get("meta_data", {}).get("get_images", True):
+            logging.info(f"Getting images for {entity.uid}")
+            from apps.webpages import services
+            from fastapi_mongo_base.core import enums
+
+            urls = await services.images_from_webpage(
+                entity,
+                invalid_languages=data.get("meta_data", {}).get(
+                    "invalid_languages", [enums.Language.Persian]
+                ),
+                min_acceptable_side=data.get("meta_data", {}).get(
+                    "min_acceptable_side", 600
+                ),
+                max_acceptable_side=data.get("meta_data", {}).get(
+                    "max_acceptable_side", 2500
+                ),
+                with_svg=data.get("meta_data", {}).get("with_svg", False),
             )
-            if response.status_code == 200:
-                entity = entity_class(**response.json())
-                await entity.start_processing()
-                return True
+            entity.images = urls
+            await entity.save()
+        else:
+            logging.info(f"Skipping images for {entity.uid}")
     return False
 
 

@@ -72,7 +72,7 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
         request: Request,
         data: WebpageCreateSchema,
         background_tasks: BackgroundTasks,
-        sync: bool = False,
+        # sync: bool = False,
     ):
         webpage: Webpage = await Webpage.get_by_url(data.url)
         if not webpage:
@@ -84,13 +84,13 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
             webpage.page_source = None
             webpage.task_status = "init"
 
-        if sync and False:
+        if False:
             await webpage.start_processing(force_refetch=data.force_refetch)
         else:
             # background_tasks.add_task(
             #     webpage.start_processing, force_refetch=data.force_refetch
             # )
-            await webpage.push_to_queue()
+            await webpage.push_to_queue(**data.model_dump())
 
         return webpage
 
@@ -102,14 +102,14 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
         self,
         request: Request,
         uid: uuid.UUID,
-        invalid_languages: str | None = None,
-        min_acceptable_side: int = 600,
-        max_acceptable_side: int = 2500,
-        with_svg: bool = False,
+        # invalid_languages: str | None = None,
+        # min_acceptable_side: int = 600,
+        # max_acceptable_side: int = 2500,
+        # with_svg: bool = False,
     ):
         item: Webpage = await self.get_item(uid)
-        invalid_languages = invalid_languages.split(",") if invalid_languages else []
-        return {
+        return {"images": item.images}
+        {
             "images": await images_from_webpage(
                 item,
                 invalid_languages=invalid_languages,

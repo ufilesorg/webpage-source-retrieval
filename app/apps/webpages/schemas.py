@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 class WebpageCreateSchema(BaseModel):
     url: str
     force_refetch: bool = False
+    meta_data: dict = {}
 
 
 class WebpageSchema(BaseEntitySchema, TaskMixin):
@@ -17,6 +18,7 @@ class WebpageSchema(BaseEntitySchema, TaskMixin):
     url: str = Field(json_schema_extra={"index": True, "unique": True})
     crawl_method: Literal["direct", "browser"] = "direct"
     page_source: str | None = None
+    images: list[str] | None = None
 
     # screenshot: str | None = None
     # google_data: dict | None = None
