@@ -23,14 +23,12 @@ async def initialize_app():
 
 
 async def process_queue_message(entity_class: Type[T], **kwargs):
-    pass
-
     queue_name = kwargs.get("name", entity_class.__name__).lower() + "_queue"
     redis_client = await db.RedisSSHHandler().initialize()
     await asyncio.wait_for(redis_client.ping(), timeout=10)
     # logging.info(f"Connected to Redis")
     result = await redis_client.brpop(queue_name, timeout=300)  # 5 minutes timeout
-    # logging.info(f"Received message from {result} {queue_name}")
+    logging.info(f"Received message from {result} {queue_name}")
     if result:
         _, message = result  # Unpack the queue_name and message
         data = json.loads(message.decode("utf-8"))
