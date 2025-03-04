@@ -34,6 +34,9 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
         data = json.loads(message.decode("utf-8"))
         uid = data.get("uid")
         entity = await entity_class.get_item(uid)
+        if not entity:
+            return False
+        
         extract_images = data.get("meta_data", {}).get("extract_images", True)
         # async with httpx.AsyncClient(
         #     headers={"x-api-key": os.getenv("UFILES_API_KEY")}
