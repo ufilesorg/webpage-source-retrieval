@@ -58,7 +58,7 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
             urls = await services.images_from_webpage(
                 entity,
                 invalid_languages=data.get("meta_data", {}).get(
-                    "invalid_languages", []
+                    "invalid_languages", ["fa"]
                 ),
                 min_acceptable_side=data.get("meta_data", {}).get(
                     "min_acceptable_side", 600
