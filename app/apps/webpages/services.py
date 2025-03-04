@@ -61,7 +61,7 @@ async def fetch_webpage_direct(webpage: Webpage, **kwargs) -> dict | None:
         async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
             response = await client.get(webpage.url, timeout=Settings.httpx_timeout)
             response.raise_for_status()
-            if response.headers.get("Content-Type") != "text/html":
+            if not response.headers.get("Content-Type", "").startswith("text/html"):
                 return {"error": "not_html"}
             return {"source_code": response.text}  # Return page content if successful
     except httpx.HTTPStatusError as e:
