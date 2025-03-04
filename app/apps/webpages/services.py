@@ -61,15 +61,17 @@ async def fetch_webpage_direct(webpage: Webpage, **kwargs) -> dict | None:
         async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
             response = await client.get(webpage.url, timeout=Settings.httpx_timeout)
             response.raise_for_status()
+            if response.headers.get("Content-Type") != "text/html":
+                return {"error": "not_html"}
             return {"source_code": response.text}  # Return page content if successful
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:
-            return None
+            return {"error": "permission_denied"}
         logging.error(f"Error fetching `{webpage.url}` with direct: {type(e)} {e}")
-        return None
+        return {"error": f"{type(e)} {e}"}
     except Exception as e:
         logging.error(f"Error fetching `{webpage.url}` with direct: {type(e)} {e}")
-        return None
+        return {"error": f"{type(e)} {e}"}
 
 
 async def fetch_webpage_dynamic(webpage: Webpage, **kwargs):
@@ -268,6 +270,8 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
 
         # Try network fetch
         content = await fetch_webpage_direct(webpage, **kwargs)
+        if content.get("error"):
+            return content
         webpage.page_source = content.get("source_code") if content else None
         if webpage.is_enough_text():
             webpage.task_status = TaskStatusEnum.completed
