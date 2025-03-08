@@ -80,10 +80,10 @@ class WebpageRouter(AbstractTaskRouter[Webpage, WebpageSchema]):
                 request, data.model_dump()
             )
 
-        if data.force_refetch:
-            webpage.page_source = None
+        if not webpage.check_cache() or data.force_refetch:
+            # webpage.page_source = None
             webpage.task_status = "init"
-
+            await webpage.save()
         if False:
             await webpage.start_processing(force_refetch=data.force_refetch)
         else:

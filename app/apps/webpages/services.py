@@ -255,7 +255,7 @@ async def get_google_result(url, **kwargs):
 @basic.try_except_wrapper
 # @basic.retry_execution(attempts=3, delay=1)
 async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
-    webpage.id = (await Webpage.get_by_url(webpage.url)).id
+    webpage = await Webpage.get_by_url(webpage.url)
 
     async with semaphore:
         # Check cache first
@@ -267,6 +267,8 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
 
         # browser_task = asyncio.create_task(fetch_webpage_dynamic(webpage))
         # fetch_tasks = [browser_task]
+        webpage.task_status = TaskStatusEnum.init
+        await webpage.save()
 
         # Try network fetch
         content = await fetch_webpage_direct(webpage, **kwargs)
