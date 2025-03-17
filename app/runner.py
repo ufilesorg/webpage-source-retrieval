@@ -28,7 +28,8 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
     await asyncio.wait_for(redis_client.ping(), timeout=10)
     # logging.info(f"Connected to Redis")
     result = await redis_client.brpop(queue_name, timeout=300)  # 5 minutes timeout
-    logging.info(f"Received message from {result} {queue_name}")
+    queue_len = await redis_client.llen(queue_name)
+    logging.info(f"Received message from {result} {queue_name} {queue_len}")
     if result:
         _, message = result  # Unpack the queue_name and message
         data = json.loads(message.decode("utf-8"))
