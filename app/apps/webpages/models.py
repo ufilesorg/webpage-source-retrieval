@@ -48,7 +48,7 @@ class Webpage(WebpageSchema, BaseEntity):
     async def start_processing(self, **kwargs):
         from . import services
 
-        await services.fetch_webpage(self, **kwargs)
+        return await services.fetch_webpage(self, **kwargs)
 
     async def push_to_queue(self, **kwargs):
         """Add the task to Redis queue"""

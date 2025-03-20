@@ -267,21 +267,22 @@ async def fetch_webpage(webpage: Webpage, **kwargs) -> dict:
 
         # browser_task = asyncio.create_task(fetch_webpage_dynamic(webpage))
         # fetch_tasks = [browser_task]
-        webpage.task_status = TaskStatusEnum.init
+        webpage.task_status = TaskStatusEnum.processing
         await webpage.save()
 
         # Try network fetch
         content = await fetch_webpage_direct(webpage, **kwargs)
         if content and content.get("error") == "not_html":
             webpage.page_source = "<html><body><h1>Not HTML</h1></body></html>"
+            webpage.task_status = TaskStatusEnum.completed
             await webpage.save()
             return webpage
 
         webpage.page_source = content.get("source_code") if content else None
         if webpage.is_enough_text():
             webpage.task_status = TaskStatusEnum.completed
-            logging.info(f"Fetching webpage {webpage.url} from network")
             await webpage.save()
+            logging.info(f"Fetching webpage {webpage.url} from network")
             return webpage
 
         content: dict = await fetch_webpage_dynamic(webpage, **kwargs)

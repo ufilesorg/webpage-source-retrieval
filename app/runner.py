@@ -52,7 +52,7 @@ async def process_queue_message(entity_class: Type[T], **kwargs):
         #         return True
 
         logging.info(f"Starting processing for {entity.url}")
-        await entity.start_processing(**data)
+        entity = await entity.start_processing(**data)
 
         logging.info(f"source gotten for {entity.url}")
 
